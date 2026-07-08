@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Job Application Email → Gmail Draft</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #2a2e37;
+    --text: #e6e8eb;
+    --muted: #9aa1ac;
+    --accent: #6c8cff;
+    --accent-hover: #5674e6;
+    --success: #3ddc84;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); padding: 2rem 1rem;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  p.sub { color: var(--muted); margin-top: 0; margin-bottom: 1.5rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; margin-bottom: 1.25rem;
+  }
+  label { display: block; font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 0.3rem; }
+  input, textarea, select {
+    width: 100%; background: #0d0f13; border: 1px solid var(--border); color: var(--text);
+    padding: 0.6rem 0.7rem; border-radius: 8px; font-size: 0.95rem; font-family: inherit;
+  }
+  textarea { resize: vertical; }
+  .row { display: flex; gap: 1rem; }
+  .row > div { flex: 1; }
+  button {
+    background: var(--accent); color: white; border: none; padding: 0.7rem 1.2rem;
+    border-radius: 8px; font-size: 0.95rem; cursor: pointer; margin-top: 1rem;
+  }
+  button:hover { background: var(--accent-hover); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .status { font-size: 0.85rem; margin-top: 0.75rem; }
+  .status.ok { color: var(--success); }
+  .status.err { color: #ff6b6b; }
+  .hidden { display: none; }
+  .gauth-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #1c2130; border: 1px solid var(--border); padding: 0.9rem 1.1rem;
+    border-radius: 10px; margin-bottom: 1.25rem; font-size: 0.9rem;
+  }
+  a.draft-link { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📧 Application Email Generator</h1>
+  <p class="sub">Fill the form → AI drafts the email → review → push straight into Gmail Drafts.</p>
+
+  <div class="gauth-banner" id="authBanner">
+    <span id="authText">Checking Google connection…</span>
+    <button id="connectBtn" class="secondary" style="margin:0;">Connect Gmail</button>
+  </div>
+
+  <div class="card">
+    <label>Company</label>
+    <input id="company" placeholder="Google" />
+
+    <div class="row">
+      <div>
+        <label>Role</label>
+        <input id="role" placeholder="Data Analyst" />
+      </div>
+      <div>
+        <label>Recipient email</label>
+        <input id="to" placeholder="hiring-manager@company.com" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Recipient name (optional)</label>
+        <input id="recipientName" placeholder="Hiring Manager" />
+      </div>
+      <div>
+        <label>Tone</label>
+        <select id="tone">
+          <option>Formal</option>
+          <option>Friendly</option>
+          <option>Enthusiastic</option>
+          <option>Concise</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Job description (paste it in)</label>
+    <textarea id="jobDescription" rows="5" placeholder="Paste the JD here..."></textarea>
+
+    <label>Key skills / projects to highlight (optional)</label>
+    <textarea id="skills" rows="2" placeholder="FastAPI + PostgreSQL REST API, Power BI dashboards..."></textarea>
+
+    <button id="generateBtn">✨ Generate Email</button>
+    <div class="status" id="genStatus"></div>
+  </div>
+
+  <div class="card hidden" id="reviewCard">
+    <label>Subject</label>
+    <input id="subject" />
+
+    <label>Body</label>
+    <textarea id="body" rows="10"></textarea>
+
+    <button id="regenerateBtn" class="secondary">↻ Regenerate</button>
+    <button id="createDraftBtn">📤 Create Gmail Draft</button>
+    <div class="status" id="draftStatus"></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function checkAuth() {
+  const res = await fetch('/auth/status');
+  const { authenticated } = await res.json();
+  $('authText').textContent = authenticated
+    ? '✅ Connected to Gmail — drafts will be created in your account.'
+    : '⚠️ Not connected. Connect Gmail to enable draft creation.';
+  $('connectBtn').textContent = authenticated ? 'Reconnect' : 'Connect Gmail';
+}
+checkAuth();
+
+$('connectBtn').onclick = () => { window.location.href = '/auth/google'; };
+
+async function generate() {
+  $('genStatus').textContent = 'Generating…';
+  $('genStatus').className = 'status';
+  $('generateBtn').disabled = true;
+
+  const payload = {
+    company: $('company').value,
+    role: $('role').value,
+    recipientName: $('recipientName').value,
+    tone: $('tone').value,
+    jobDescription: $('jobDescription').value,
+    skills: $('skills').value,
+  };
+
+  try {
+    const res = await fetch('/api/generate-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+    $('subject').value = data.subject;
+    $('body').value = data.body;
+    $('reviewCard').classList.remove('hidden');
+    $('genStatus').textContent = 'Draft generated below ↓';
+    $('genStatus').className = 'status ok';
+  } catch (err) {
+    $('genStatus').textContent = err.message;
+    $('genStatus').className = 'status err';
+  } finally {
+    $('generateBtn').disabled = false;
+  }
+}
+
+$('generateBtn').onclick = generate;
+$('regenerateBtn').onclick = generate;
+
+$('createDraftBtn').onclick = async () => {
+  $('draftStatus').textContent = 'Creating draft…';
+  $('draftStatus').className = 'status';
+  $('createDraftBtn').disabled = true;
+
+  try {
+    const res = await fetch('/api/create-draft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: $('to').value,
+        subject: $('subject').value,
+        body: $('body').value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create draft');
+
+    $('draftStatus').innerHTML =
+      `✅ Draft created! <a class="draft-link" href="${data.gmailLink}" target="_blank">Open in Gmail →</a>`;
+    $('draftStatus').className = 'status ok';
+  } catch (err) {
+    $('draftStatus').textContent = err.message;
+    $('draftStatus').className = 'status err';
+  } finally {
+    $('createDraftBtn').disabled = false;
+  }
+};
+</script>
+</body>
+</html>
