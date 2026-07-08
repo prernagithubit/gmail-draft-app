@@ -3,13 +3,24 @@ const express = require('express');
 const path = require('path');
 const { google } = require('googleapis');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { kv } = require('@vercel/kv');
+const { createClient } = require('redis');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// ---- Redis client (lazy connect, reused across requests) ----
+let redisClient;
+async function getRedis() {
+  if (!redisClient) {
+    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient.on('error', (err) => console.error('Redis error:', err));
+    await redisClient.connect();
+  }
+  return redisClient;
+}
 
 // ---- Google OAuth setup ----
 const oauth2Client = new google.auth.OAuth2(
@@ -21,12 +32,13 @@ const oauth2Client = new google.auth.OAuth2(
 // Narrowest scope needed: compose-only, cannot read mail
 const SCOPES = ['https://www.googleapis.com/auth/gmail.compose'];
 
-// Tokens are now persisted in Vercel KV under this key.
+// Tokens are persisted in Redis under this key.
 // For true multi-user support, key this by a session/user ID instead of a fixed string.
 const TOKEN_KEY = 'gmail_tokens';
 
 app.get('/auth/status', async (req, res) => {
-  const tokens = await kv.get(TOKEN_KEY);
+  const redis = await getRedis();
+  const tokens = await redis.get(TOKEN_KEY);
   res.json({ authenticated: !!tokens });
 });
 
@@ -43,7 +55,8 @@ app.get('/oauth2callback', async (req, res) => {
   const { code } = req.query;
   try {
     const { tokens } = await oauth2Client.getToken(code);
-    await kv.set(TOKEN_KEY, tokens); // persisted across serverless invocations
+    const redis = await getRedis();
+    await redis.set(TOKEN_KEY, JSON.stringify(tokens)); // persisted across serverless invocations
     oauth2Client.setCredentials(tokens);
     res.redirect('/?connected=1');
   } catch (err) {
@@ -112,10 +125,13 @@ function buildRawEmail({ to, subject, body }) {
 }
 
 app.post('/api/create-draft', async (req, res) => {
-  const storedTokens = await kv.get(TOKEN_KEY);
-  if (!storedTokens) {
+  const redis = await getRedis();
+  const rawTokens = await redis.get(TOKEN_KEY);
+  if (!rawTokens) {
     return res.status(401).json({ error: 'Not authenticated with Google' });
   }
+  const storedTokens = JSON.parse(rawTokens);
+
   const { to, subject, body } = req.body;
   if (!to || !subject || !body) {
     return res.status(400).json({ error: 'to, subject, and body are required' });
@@ -127,7 +143,7 @@ app.post('/api/create-draft', async (req, res) => {
     // Persist any refreshed access token so future requests don't need re-auth
     oauth2Client.on('tokens', async (newTokens) => {
       const merged = { ...storedTokens, ...newTokens };
-      await kv.set(TOKEN_KEY, merged);
+      await redis.set(TOKEN_KEY, JSON.stringify(merged));
     });
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
@@ -148,7 +164,7 @@ app.post('/api/create-draft', async (req, res) => {
   } catch (err) {
     console.error('Draft creation error:', err.message);
     if (err.code === 401 || (err.response && err.response.status === 401)) {
-      await kv.del(TOKEN_KEY);
+      await redis.del(TOKEN_KEY);
       return res.status(401).json({ error: 'Google session expired, please reconnect' });
     }
     res.status(500).json({ error: 'Failed to create Gmail draft' });
