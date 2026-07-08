@@ -2,13 +2,14 @@
   "name": "gmail-draft-app",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@vercel/kv": "^3.0.0",
