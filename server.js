@@ -73,7 +73,11 @@ app.post('/api/generate-email', async (req, res) => {
     return res.status(400).json({ error: 'Company and role are required' });
   }
 
-  const prompt = `Write a job application email.
+  const prompt = `Write a short, specific job application email using this exact structure:
+1. One line: "I'm applying for the ${role} role at ${company}." (or close variant)
+2. 2-3 lines naming 1-2 concrete projects/skills from the info below, with real details (metrics, tech stack) — not generic skill lists.
+3. One line connecting those projects to the role, in plain language — do NOT use phrases like "aligns with your mission," "leverage," "cutting-edge," or "seamless."
+4. One line offering to share resume/GitHub/portfolio.
 
 Recipient name: ${recipientName || 'Hiring Manager'}
 Company: ${company}
@@ -84,10 +88,9 @@ Job description:
 ${jobDescription || '(not provided)'}
 
 Requirements:
-- 150-200 word body, no filler, no generic phrases like "I am writing to express"
-- Reference 2-3 concrete skills/projects tied to the job description
-- End with a clear, low-pressure call to action (e.g. offering to share resume/portfolio)
-- Never invent experience, projects, companies, or achievements. Only use information explicitly provided above (the skills/highlights field and the job description). If specific details aren't provided, keep the language general rather than fabricating specifics (e.g. say "experience with SQL and data analysis" rather than inventing a company or project name).
+- Under 130 words total, no filler, no generic phrases like "I am writing to express" or "I came across"
+- Banned words/phrases — do not use any of these: "aligns with," "mission," "cutting-edge," "eager to become," "leverage," "robust," "seamless," "passionate about," "dynamic," "synergy"
+- Never invent experience, projects, companies, or achievements. Only use information explicitly provided above. If specific details aren't provided, keep the language general rather than fabricating specifics.
 - Output ONLY valid JSON, no markdown fences, in this exact shape:
 {"subject": "...", "body": "..."}`;
 
